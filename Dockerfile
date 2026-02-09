@@ -3,7 +3,7 @@ WORKDIR /go/src
 EXPOSE 8080
 
 # Install git first as it is required for go mod tidy
-RUN apk add --no-cache git build-base
+RUN apt-get update && apt-get install -y git build-essential
 
 # Copy everything first
 COPY go.mod go.sum ./
