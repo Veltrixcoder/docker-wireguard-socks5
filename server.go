@@ -92,6 +92,41 @@ func handleHTTP(w http.ResponseWriter, r *http.Request) {
 	io.Copy(w, resp.Body)
 }
 
+func handleDebug(w http.ResponseWriter, r *http.Request) {
+	if tnet == nil {
+		w.Header().Set("Content-Type", "text/plain")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("Error: WireGuard not initialized (Direct Mode)"))
+		return
+	}
+
+	client := &http.Client{
+		Transport: &http.Transport{
+			DialContext: tnet.DialContext,
+		},
+		Timeout: 10 * time.Second,
+	}
+
+	resp, err := client.Get("http://ifconfig.me")
+	if err != nil {
+		log.Printf("[DEBUG] VPN Test Failed: %v", err)
+		http.Error(w, fmt.Sprintf("VPN Connection Failed: %v", err), http.StatusServiceUnavailable)
+		return
+	}
+	defer resp.Body.Close()
+	
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to read response: %v", err), http.StatusInternalServerError)
+		return
+	}
+	
+	log.Printf("[DEBUG] VPN Test Success. IP: %s", string(body))
+	w.Header().Set("Content-Type", "text/plain")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(fmt.Sprintf("VPN Connected! Public IP: %s", string(body))))
+}
+
 func copyHeader(dst, src http.Header) {
 	for k, vv := range src {
 		for _, v := range vv {
@@ -211,21 +246,37 @@ func main() {
 				}
 			}
 			
+			// Handle CONNECT (HTTPS tunnel)
 			if r.Method == http.MethodConnect {
 				log.Printf("[CONNECT] %s -> %s", r.RemoteAddr, r.Host)
 				handleTunneling(w, r)
-			} else if r.URL.Path == "/" {
-				log.Printf("[HEALTH] Health check from %s", r.RemoteAddr)
-				w.WriteHeader(http.StatusOK)
-				if tnet != nil {
-					w.Write([]byte("Proxy Running via Userspace WireGuard"))
-				} else {
-					w.Write([]byte("Proxy Running in Direct Mode (No VPN)"))
-				}
-			} else {
-				log.Printf("[HTTP] %s %s -> %s", r.Method, r.RemoteAddr, r.URL.String())
-				handleHTTP(w, r)
+				return
 			}
+			
+			// Direct requests to the proxy server (Health check & Debug)
+			// We check r.URL.Host == "" which means it's a direct request, not a proxy request
+			if r.URL.Host == "" {
+				if r.URL.Path == "/" {
+					log.Printf("[HEALTH] Health check from %s", r.RemoteAddr)
+					w.WriteHeader(http.StatusOK)
+					if tnet != nil {
+						w.Write([]byte("Proxy Running via Userspace WireGuard"))
+					} else {
+						w.Write([]byte("Proxy Running in Direct Mode (No VPN)"))
+					}
+					return
+				}
+				
+				if r.URL.Path == "/debug" {
+					log.Printf("[DEBUG] Debug check from %s", r.RemoteAddr)
+					handleDebug(w, r)
+					return
+				}
+			}
+
+			// Proxy HTTP requests
+			log.Printf("[HTTP] %s %s -> %s", r.Method, r.RemoteAddr, r.URL.String())
+			handleHTTP(w, r)
 		}),
 	}
 	
