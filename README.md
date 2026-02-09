@@ -26,6 +26,8 @@ Supports latest Docker for Windows, Linux, and MacOS.
 
 ### Deployment on Zeabur / PaaS
 
+This project now uses **Userspace WireGuard** (`wireguard-go` + `netstack`). It does **NOT** require `NET_ADMIN` capabilities or kernel modules, making it compatible with restrictive PaaS environments like Zeabur, Heroku, and Railway.
+
 If you are deploying on Zeabur or other PaaS that use ingress routing based on the Host header, standard HTTP CONNECT requests might fail with 404. You need to spoof the Host header in the proxy request.
 
 **Usage with curl:**
