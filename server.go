@@ -15,7 +15,7 @@ import (
 type params struct {
 	User     string `env:"PROXY_USER" envDefault:""`
 	Password string `env:"PROXY_PASS" envDefault:""`
-	Port     string `env:"PROXY_PORT" envDefault:"8080"`
+	Port     string `env:"PORT" envDefault:"8080"`
 	Up       string `env:"PROXY_UP"   envDefault:""`
 }
 
@@ -95,6 +95,9 @@ func main() {
 			}
 			if r.Method == http.MethodConnect {
 				handleTunneling(w, r)
+			} else if r.URL.Path == "/" {
+				w.WriteHeader(http.StatusOK)
+				w.Write([]byte("Proxy Running"))
 			} else {
 				handleHTTP(w, r)
 			}
