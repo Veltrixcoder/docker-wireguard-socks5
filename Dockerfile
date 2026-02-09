@@ -1,4 +1,4 @@
-FROM golang:1.22-bookworm as builder
+FROM golang:bookworm as builder
 WORKDIR /go/src
 EXPOSE 8080
 
