@@ -23,7 +23,25 @@ Supports latest Docker for Windows, Linux, and MacOS.
 7. It optionally runs the user specified CMD line from `docker run` positional arguments ([see Docker doc](https://docs.docker.com/engine/reference/run/#cmd-default-command-or-options)). The program will use the VPN connection inside the container.
 8. If user has provided CMD line, and `DAEMON_MODE` environment variable is not set to `true`, then after running the CMD line, it will shutdown the OpenVPN client and terminate the container.
 
+
+### Deployment on Zeabur / PaaS
+
+If you are deploying on Zeabur or other PaaS that use ingress routing based on the Host header, standard HTTP CONNECT requests might fail with 404. You need to spoof the Host header in the proxy request.
+
+**Usage with curl:**
+
+```bash
+# Replace 'your-app.zeabur.app' with your actual domain
+curl -v -x https://your-app.zeabur.app \
+     --proxy-header "Host: your-app.zeabur.app" \
+     https://ifconfig.me
+```
+
+**Why?**
+Standard CONNECT requests set the `Host` header to the *destination* (e.g., `ifconfig.me`). PaaS platforms route traffic based on the Host header, so they don't know where to send the CONNECT request. By manually setting the Host header to your app's domain, the PaaS routes it correctly. The updated server code (v2) knows to ignore this spoofed Host header and use the Request-URI for dialing.
+
 ## Example with Warp
+
 
 ```bash
 

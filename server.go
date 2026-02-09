@@ -20,7 +20,13 @@ type params struct {
 }
 
 func handleTunneling(w http.ResponseWriter, r *http.Request) {
-	dest_conn, err := net.DialTimeout("tcp", r.Host, 10*time.Second)
+	// Use r.URL.Host (from CONNECT line) instead of r.Host (Host header)
+	// This allows spoofing the Host header to pass through reverse proxies.
+	dest := r.URL.Host
+	if dest == "" {
+		dest = r.Host
+	}
+	dest_conn, err := net.DialTimeout("tcp", dest, 10*time.Second)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
