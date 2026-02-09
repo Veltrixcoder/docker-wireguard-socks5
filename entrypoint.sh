@@ -28,8 +28,14 @@ server &
 SERVER_PID=$!
 
 # Wait for proxy to start
-echo "[ENTRYPOINT] Waiting for proxy to be ready..."
-while ! curl -s http://127.0.0.1:8080/ > /dev/null; do
+echo "[ENTRYPOINT] Waiting for proxy to be ready on port 8080..."
+while ! curl -v http://127.0.0.1:8080/ 2>&1 | grep "Proxy Running"; do
+    if ! kill -0 $SERVER_PID 2>/dev/null; then
+        echo "[FATAL] Server process exited unexpectedly!"
+        wait $SERVER_PID
+        exit 1
+    fi
+    echo "[ENTRYPOINT] Proxy not ready yet... retrying in 1s"
     sleep 1
 done
 echo "[ENTRYPOINT] Proxy is ready!"

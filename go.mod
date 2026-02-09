@@ -1,8 +1,3 @@
-module github.com/curve25519xsalsa20poly1305/wireguard-http-proxy
+module app
 
 go 1.20
-
-require (
-	github.com/caarlos0/env v3.5.0+incompatible
-	golang.org/x/crypto v0.0.0-20210322153248-0c34fe9e7dc2
-)
