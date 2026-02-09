@@ -27,8 +27,7 @@ COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY entrypoint.sh   /usr/local/bin/
 
 # Install runtime dependencies
-RUN echo "http://dl-4.alpinelinux.org/alpine/edge/testing" >> /etc/apk/repositories \
-    && apk add --no-cache bash curl wget wireguard-tools openresolv ip6tables \
+RUN apk add --no-cache bash curl \
     && chmod +x /usr/local/bin/entrypoint.sh
 
 ENV         DAEMON_MODE                     false

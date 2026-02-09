@@ -1,92 +1,27 @@
 #!/usr/bin/env bash
+set -e
 
-function spawn {
-    if [[ -z ${PIDS+x} ]]; then PIDS=(); fi
-    "$@" &
-    PIDS+=($!)
-}
+echo "[ENTRYPOINT] Starting WireGuard HTTP Proxy"
 
-function join {
-    if [[ ! -z ${PIDS+x} ]]; then
-        for pid in "${PIDS[@]}"; do
-            wait "${pid}"
-        done
-    fi
-}
-
-function on_kill {
-    if [[ ! -z ${PIDS+x} ]]; then
-        for pid in "${PIDS[@]}"; do
-            kill "${pid}" 2> /dev/null
-        done
-    fi
-    kill "${ENTRYPOINT_PID}" 2> /dev/null
-}
-
-export ENTRYPOINT_PID="${BASHPID}"
-
-trap "on_kill" EXIT
-trap "on_kill" SIGINT
-
-function gen_conf {
-    if [[ \
-        -n "${WIREGUARD_INTERFACE_PRIVATE_KEY}" && \
-        -n "${WIREGUARD_INTERFACE_DNS}" && \
-        -n "${WIREGUARD_INTERFACE_ADDRESS}" && \
-        -n "${WIREGUARD_PEER_PUBLIC_KEY}" && \
-        -n "${WIREGUARD_PEER_ALLOWED_IPS}" && \
-        -n "${WIREGUARD_PEER_ENDPOINT}" \
-    ]]; then
-        cat <<EOF
-[Interface]
-PrivateKey = ${WIREGUARD_INTERFACE_PRIVATE_KEY}
-DNS = ${WIREGUARD_INTERFACE_DNS}
-Address = ${WIREGUARD_INTERFACE_ADDRESS}
-
-[Peer]
-PublicKey = ${WIREGUARD_PEER_PUBLIC_KEY}
-AllowedIPs = ${WIREGUARD_PEER_ALLOWED_IPS}
-Endpoint = ${WIREGUARD_PEER_ENDPOINT}
-EOF
-    else
-        echo "# Generating Warp config" 1>&2
-        warp
-    fi
-}
-
-if [ -n "${WIREGUARD_CONFIG}" ]; then
-    cp -f "${WIREGUARD_CONFIG}" /etc/wireguard/wg.conf
+# Check if WireGuard config should be generated
+if [[ -z "${WIREGUARD_INTERFACE_PRIVATE_KEY}" ]]; then
+    echo "[ENTRYPOINT] Generating Cloudflare Warp configuration..."
+    
+    # Run warp binary to generate config
+    WARP_OUTPUT=$(warp)
+    
+    # Parse the warp output to extract config values
+    export WIREGUARD_INTERFACE_PRIVATE_KEY=$(echo "$WARP_OUTPUT" | grep "PrivateKey" | awk '{print $3}')
+    export WIREGUARD_INTERFACE_ADDRESS=$(echo "$WARP_OUTPUT" | grep "Address" | awk '{print $3}')
+    export WIREGUARD_PEER_PUBLIC_KEY=$(echo "$WARP_OUTPUT" | grep "PublicKey" | awk '{print $3}')
+    export WIREGUARD_PEER_ENDPOINT=$(echo "$WARP_OUTPUT" | grep "Endpoint" | awk '{print $3}')
+    export WIREGUARD_INTERFACE_DNS="${WIREGUARD_INTERFACE_DNS:-1.1.1.1}"
+    
+    echo "[ENTRYPOINT] Warp config generated successfully"
 else
-    gen_conf > /etc/wireguard/wg.conf
+    echo "[ENTRYPOINT] Using provided WireGuard configuration"
 fi
 
-wg-quick up wg
-
-spawn server
-
-SUBNET=$(ip -o -f inet addr show dev eth0 | awk '{print $4}')
-IPADDR=$(echo "${SUBNET}" | cut -f1 -d'/')
-GATEWAY=$(route -n | grep 'UG[ \t]' | awk '{print $2}')
-eval "$(ipcalc -np "${SUBNET}")"
-
-ip -4 rule del not fwmark 51820 table 51820
-ip -4 rule del table main suppress_prefixlength 0
-
-ip -4 rule add prio 10 from "${IPADDR}" table 128
-ip -4 route add table 128 to "${NETWORK}/${PREFIX}" dev eth0
-ip -4 route add table 128 default via "${GATEWAY}"
-
-ip -4 rule add prio 20 not fwmark 51820 table 51820
-ip -4 rule add prio 20 table main suppress_prefixlength 0
-
-if [[ -n "${WIREGUARD_UP}" ]]; then
-    spawn "${WIREGUARD_UP}" "$@"
-elif [[ -n "${PROXY_UP}" ]]; then
-    spawn "${PROXY_UP}" "$@"
-elif [[ $# -gt 0 ]]; then
-    "$@"
-fi
-
-if [[ $# -eq 0 || "${DAEMON_MODE}" == true ]]; then
-    join
-fi
+# Start the server (it handles WireGuard internally via netstack)
+echo "[ENTRYPOINT] Starting HTTP proxy server..."
+exec server "$@"
