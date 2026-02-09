@@ -26,9 +26,15 @@ COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 
 COPY entrypoint.sh   /usr/local/bin/
 
-# Install runtime dependencies
+# Install Deno
 RUN apk add --no-cache bash curl \
+    && curl -fsSL https://deno.land/x/install/install.sh | sh \
+    && mv /root/.deno/bin/deno /usr/local/bin/deno \
     && chmod +x /usr/local/bin/entrypoint.sh
+
+# Copy Deno App
+COPY app /app
+WORKDIR /app
 
 ENV         DAEMON_MODE                     false
 ENV         PROXY_UP                        ""

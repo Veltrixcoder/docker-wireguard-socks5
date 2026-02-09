@@ -22,6 +22,14 @@ else
     echo "[ENTRYPOINT] Using provided WireGuard configuration"
 fi
 
-# Start the server (it handles WireGuard internally via netstack)
-echo "[ENTRYPOINT] Starting HTTP proxy server..."
-exec server "$@"
+# Start the proxy server in the background
+echo "[ENTRYPOINT] Starting HTTP proxy server (internal)..."
+server &
+SERVER_PID=$!
+
+# Wait for proxy to start
+sleep 2
+
+# Start Deno Application
+echo "[ENTRYPOINT] Starting Deno Application..."
+exec deno task dev
