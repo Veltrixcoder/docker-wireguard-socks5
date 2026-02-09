@@ -100,11 +100,11 @@ func copyHeader(dst, src http.Header) {
 
 func startWireGuard(cfg params) error {
 	if cfg.WgPrivateKey == "" || cfg.WgPeerEndpoint == "" {
-		log.Println("WireGuard config missing, running in DIRECT mode")
+		log.Println("[INFO] WireGuard config missing, running in DIRECT mode (no VPN)")
 		return nil
 	}
 
-	log.Println("Initializing Userspace WireGuard...")
+	log.Println("[INFO] Initializing Userspace WireGuard...")
 
 	localIPs := []netip.Addr{}
 	if cfg.WgAddress != "" {
@@ -113,25 +113,35 @@ func startWireGuard(cfg params) error {
 		addr, err := netip.ParseAddr(addrStr)
 		if err == nil {
 			localIPs = append(localIPs, addr)
+			log.Printf("[INFO] Local VPN IP: %s", addr)
 		} else {
-			log.Printf("Failed to parse local IP: %v", err)
+			log.Printf("[WARN] Failed to parse local IP: %v", err)
 		}
 	}
 	
-	dnsIP, _ := netip.ParseAddr(cfg.WgDNS)
+	dnsIP, err := netip.ParseAddr(cfg.WgDNS)
+	if err != nil {
+		log.Printf("[WARN] Failed to parse DNS IP, using default: %v", err)
+		dnsIP, _ = netip.ParseAddr("1.1.1.1")
+	}
+	log.Printf("[INFO] DNS Server: %s", dnsIP)
 
-	tun, tnetErr := netstack.CreateNetTUN(
+	log.Println("[INFO] Creating virtual network interface...")
+	tunDev, tnetInstance, err := netstack.CreateNetTUN(
 		localIPs,
 		[]netip.Addr{dnsIP},
 		1420,
 	)
-	if tnetErr != nil {
-		return fmt.Errorf("failed to create TUN: %w", tnetErr)
+	if err != nil {
+		return fmt.Errorf("failed to create TUN: %w", err)
 	}
-	tnet = tun
+	tnet = tnetInstance
+	log.Println("[INFO] Virtual TUN device created successfully")
 
-	dev := device.NewDevice(tun, conn.NewDefaultBind(), device.NewLogger(device.LogLevelVerbose, ""))
+	log.Println("[INFO] Initializing WireGuard device...")
+	dev := device.NewDevice(tunDev, conn.NewDefaultBind(), device.NewLogger(device.LogLevelSilent, ""))
 	
+	log.Printf("[INFO] Configuring peer endpoint: %s", cfg.WgPeerEndpoint)
 	uapi := fmt.Sprintf(`private_key=%s
 public_key=%s
 endpoint=%s
@@ -141,26 +151,37 @@ allowed_ip=0.0.0.0/0
 	if err := dev.IpcSet(uapi); err != nil {
 		return fmt.Errorf("failed to configure device: %w", err)
 	}
+	log.Println("[INFO] WireGuard peer configured")
 	
 	if err := dev.Up(); err != nil {
 		return fmt.Errorf("failed to bring up device: %w", err)
 	}
 
-	log.Println("WireGuard interface is UP")
+	log.Println("[SUCCESS] WireGuard interface is UP - All traffic will route through VPN")
 	return nil
 }
 
 func main() {
+	log.SetFlags(log.LstdFlags | log.Lmsgprefix)
+	log.Println("[STARTUP] Initializing HTTP Proxy with Userspace WireGuard")
+	
 	cfg := params{}
 	if err := env.Parse(&cfg); err != nil {
-		log.Printf("Config parse warning: %+v\n", err)
+		log.Printf("[WARN] Config parse warning: %+v\n", err)
+	}
+
+	log.Printf("[CONFIG] Proxy Port: %s", cfg.Port)
+	if cfg.User != "" {
+		log.Printf("[CONFIG] Authentication: Enabled (user: %s)", cfg.User)
+	} else {
+		log.Println("[CONFIG] Authentication: Disabled")
 	}
 
 	if err := startWireGuard(cfg); err != nil {
-		log.Fatalf("FATAL: Failed to start WireGuard: %v", err)
+		log.Fatalf("[FATAL] Failed to start WireGuard: %v", err)
 	}
 
-	log.Printf("Start listening http proxy server on port %s\n", cfg.Port)
+	log.Printf("[STARTUP] Starting HTTP proxy server on port %s\n", cfg.Port)
 
 	server := &http.Server{
 		Addr: ":" + cfg.Port,
@@ -168,6 +189,7 @@ func main() {
 			if cfg.User != "" && cfg.Password != "" {
 				user, pass, ok := r.BasicAuth()
 				if !ok || user != cfg.User || pass != cfg.Password {
+					log.Printf("[AUTH] Unauthorized access attempt from %s", r.RemoteAddr)
 					w.Header().Set("Proxy-Authenticate", `Basic realm="Proxy"`)
 					http.Error(w, "Unauthorized", http.StatusProxyAuthRequired)
 					return
@@ -175,17 +197,25 @@ func main() {
 			}
 			
 			if r.Method == http.MethodConnect {
+				log.Printf("[CONNECT] %s -> %s", r.RemoteAddr, r.Host)
 				handleTunneling(w, r)
 			} else if r.URL.Path == "/" {
+				log.Printf("[HEALTH] Health check from %s", r.RemoteAddr)
 				w.WriteHeader(http.StatusOK)
-				w.Write([]byte("Proxy Running via Userspace WireGuard"))
+				if tnet != nil {
+					w.Write([]byte("Proxy Running via Userspace WireGuard"))
+				} else {
+					w.Write([]byte("Proxy Running in Direct Mode (No VPN)"))
+				}
 			} else {
+				log.Printf("[HTTP] %s %s -> %s", r.Method, r.RemoteAddr, r.URL.String())
 				handleHTTP(w, r)
 			}
 		}),
 	}
 	
+	log.Println("[READY] Proxy server is ready to accept connections")
 	if err := server.ListenAndServe(); err != nil {
-		log.Fatal(err)
+		log.Fatalf("[FATAL] Server error: %v", err)
 	}
 }
