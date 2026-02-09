@@ -1,6 +1,8 @@
 package main
 
 import (
+	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"log"
@@ -142,11 +144,24 @@ func startWireGuard(cfg params) error {
 	dev := device.NewDevice(tunDev, conn.NewDefaultBind(), device.NewLogger(device.LogLevelSilent, ""))
 	
 	log.Printf("[INFO] Configuring peer endpoint: %s", cfg.WgPeerEndpoint)
+
+	// Convert keys from Base64 to Hex
+	// wireguard-go expects hex keys in UAPI, but inputs are usually Base64
+	privateKeyHex, err := base64ToHex(cfg.WgPrivateKey)
+	if err != nil {
+		return fmt.Errorf("invalid private key (base64 decode failed): %w", err)
+	}
+
+	publicKeyHex, err := base64ToHex(cfg.WgPeerPublicKey)
+	if err != nil {
+		return fmt.Errorf("invalid peer public key (base64 decode failed): %w", err)
+	}
+
 	uapi := fmt.Sprintf(`private_key=%s
 public_key=%s
 endpoint=%s
 allowed_ip=0.0.0.0/0
-`, cfg.WgPrivateKey, cfg.WgPeerPublicKey, cfg.WgPeerEndpoint)
+`, privateKeyHex, publicKeyHex, cfg.WgPeerEndpoint)
 
 	if err := dev.IpcSet(uapi); err != nil {
 		return fmt.Errorf("failed to configure device: %w", err)
@@ -218,4 +233,12 @@ func main() {
 	if err := server.ListenAndServe(); err != nil {
 		log.Fatalf("[FATAL] Server error: %v", err)
 	}
+}
+
+func base64ToHex(b64 string) (string, error) {
+	decoded, err := base64.StdEncoding.DecodeString(b64)
+	if err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(decoded), nil
 }
