@@ -9,8 +9,8 @@ RUN apt-get update && apt-get install -y git build-essential
 COPY go.mod go.sum ./
 COPY warp.go server.go ./
 
-# Resolution ambiguity fix: Explicitly fetch the main module
-RUN go get golang.zx2c4.com/wireguard@latest && go mod tidy
+# Resolution ambiguity fix: Explicitly fetch the main module and tidy
+RUN go mod download && go mod tidy
 
 # Build binaries
 RUN CGO_ENABLED=0 GOOS=linux \
