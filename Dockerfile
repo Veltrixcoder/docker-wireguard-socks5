@@ -9,8 +9,8 @@ RUN apk add --no-cache git build-base
 COPY go.mod go.sum ./
 COPY warp.go server.go ./
 
-# Tidy up dependencies (fixes missing go.sum error)
-RUN go mod tidy
+# Resolution ambiguity fix: Explicitly fetch the main module
+RUN go get golang.zx2c4.com/wireguard@latest && go mod tidy
 
 # Build binaries
 RUN CGO_ENABLED=0 GOOS=linux \
