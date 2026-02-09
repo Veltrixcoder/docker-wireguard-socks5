@@ -1,20 +1,17 @@
 FROM golang:alpine as builder
 WORKDIR /go/src
-COPY warp.go ./warp/
-COPY server.go ./server/
+COPY go.mod go.sum ./
+RUN go mod download
+COPY warp.go server.go ./
 RUN CGO_ENABLED=0 GOOS=linux \
     apk add --no-cache git build-base && \
-    cd warp && \
-    go get && \
-    go build -a -installsuffix cgo -ldflags '-s' -o warp && \
-    cd ../server && \
-    go get && \
-    go build -a -installsuffix cgo -ldflags '-s' -o server
+    go build -a -installsuffix cgo -ldflags '-s' -o warp warp.go && \
+    go build -a -installsuffix cgo -ldflags '-s' -o server server.go
 
 FROM alpine:latest
 
-COPY --from=builder /go/src/warp/warp /usr/local/bin/
-COPY --from=builder /go/src/server/server /usr/local/bin/
+COPY --from=builder /go/src/warp /usr/local/bin/
+COPY --from=builder /go/src/server /usr/local/bin/
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 
 COPY entrypoint.sh   /usr/local/bin/
