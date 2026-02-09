@@ -28,7 +28,11 @@ server &
 SERVER_PID=$!
 
 # Wait for proxy to start
-sleep 2
+echo "[ENTRYPOINT] Waiting for proxy to be ready..."
+while ! curl -s http://127.0.0.1:8080/ > /dev/null; do
+    sleep 1
+done
+echo "[ENTRYPOINT] Proxy is ready!"
 
 # Start Deno Application
 echo "[ENTRYPOINT] Starting Deno Application..."
