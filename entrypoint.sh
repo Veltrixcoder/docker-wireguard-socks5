@@ -62,7 +62,7 @@ fi
 
 wg-quick up wg
 
-spawn socks5
+spawn server
 
 SUBNET=$(ip -o -f inet addr show dev eth0 | awk '{print $4}')
 IPADDR=$(echo "${SUBNET}" | cut -f1 -d'/')
@@ -81,8 +81,8 @@ ip -4 rule add prio 20 table main suppress_prefixlength 0
 
 if [[ -n "${WIREGUARD_UP}" ]]; then
     spawn "${WIREGUARD_UP}" "$@"
-elif [[ -n "${SOCKS5_UP}" ]]; then
-    spawn "${SOCKS5_UP}" "$@"
+elif [[ -n "${PROXY_UP}" ]]; then
+    spawn "${PROXY_UP}" "$@"
 elif [[ $# -gt 0 ]]; then
     "$@"
 fi
