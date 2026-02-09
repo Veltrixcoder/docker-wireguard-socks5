@@ -17,7 +17,7 @@ RUN CGO_ENABLED=0 GOOS=linux \
     go build -a -installsuffix cgo -ldflags '-s' -o warp warp.go && \
     go build -a -installsuffix cgo -ldflags '-s' -o server server.go
 
-FROM alpine:latest
+FROM ubuntu:22.04
 
 # Copy binaries
 COPY --from=builder /go/src/warp /usr/local/bin/
@@ -26,8 +26,13 @@ COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 
 COPY entrypoint.sh   /usr/local/bin/
 
-# Install Deno
-RUN apk add --no-cache bash curl \
+# Install dependencies and Deno
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    bash \
+    curl \
+    ca-certificates \
+    unzip \
+    && rm -rf /var/lib/apt/lists/* \
     && curl -fsSL https://deno.land/x/install/install.sh | sh \
     && mv /root/.deno/bin/deno /usr/local/bin/deno \
     && chmod +x /usr/local/bin/entrypoint.sh
